@@ -36,4 +36,13 @@ dpi_mode=87
 dpi_output_format=0x7f216
 dpi_timings=480 0 10 16 59 800 0 15 113 15 0 0 0 60 0 32000000 6
 dtoverlay=hypertouch40
+dtparam=touchscreen-swapped-x-y
+dtparam=touchscreen-inverted-x
 ```
+
+## Control backlight (min:0 max:31)
+
+```bash
+echo 31 | sudo tee /sys/class/backlight/soc\:backlight/brightness
+```
+
