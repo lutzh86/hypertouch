@@ -45,6 +45,16 @@ The installer applies a fix in `/boot/config.txt` (`gpio=27=pu`) to force the pi
 *   **`docs/`**: Manuals and datasheets (including `TXW397017S4-AS_SPEC.pdf`).
 *   **`install.sh`**: Main installation script.
 
+## Backlight Control
+
+You can adjust the backlight brightness via the Linux sysfs interface. The valid range is typically 0 to 31.
+
+To set the brightness (e.g., to maximum):
+```bash
+echo 31 | sudo tee /sys/class/backlight/soc:backlight/brightness
+```
+*Note: If the path `soc:backlight` does not exist, check `ls /sys/class/backlight/` for the correct device name.*
+
 ## Troubleshooting
 
 If the touch does not work:

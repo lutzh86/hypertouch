@@ -65,7 +65,7 @@ echo "Select Display Driver Mode:"
 echo -e "1) ${GREEN}KMS/DRM (Recommended)${NC} - Modern graphics stack, better performance."
 echo -e "2) ${YELLOW}Legacy${NC} - Old-school Framebuffer mode."
 echo ""
-read -p "Select [1]: " choice
+read -p "Select [1]: " choice < /dev/tty
 choice=${choice:-1}
 
 CONFIG="/boot/config.txt"
