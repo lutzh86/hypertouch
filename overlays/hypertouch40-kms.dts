@@ -54,7 +54,7 @@
                     vsync-active = <0>;
 
                     de-active = <1>; /* High active */
-                    pixelclk-active = <1>; /* High (rising edge) */
+                    pixelclk-active = <0>; /* 0 = Drive on falling edge, 1 = Rising */
                 };
 
                 port {
@@ -114,6 +114,8 @@
         __overlay__ {
             i2c_gpio: i2c@0 {
                 compatible = "i2c-gpio";
+                #address-cells = <1>;
+                #size-cells = <0>;
                 gpios = <&gpio 10 0 /* sda - GPIO_ACTIVE_HIGH */
                          &gpio 11 0 /* scl - GPIO_ACTIVE_HIGH */
                         >;

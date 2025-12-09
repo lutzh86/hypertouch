@@ -40,13 +40,14 @@
     fragment@3 {
         target-path = "/";
         __overlay__ {
-            i2c_gpio: i2c@0 {
-                compatible = "i2c-gpio";
-                gpios = <&gpio 10 0 /* sda */
-                         &gpio 11 0 /* scl */
-                        >;
-                i2c-gpio,delay-us = <4>;        /* ~100 kHz */
-                #address-cells = <1>;
+                        i2c_gpio: i2c@0 {
+                            compatible = "i2c-gpio";
+                            #address-cells = <1>;
+                            #size-cells = <0>;
+                            gpios = <&gpio 10 0 /* sda */
+                                 &gpio 11 0 /* scl */
+                                >;
+                            i2c-gpio,delay-us = <4>;        /* ~100 kHz */                #address-cells = <1>;
                 #size-cells = <0>;
                 status = "okay";
             };

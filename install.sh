@@ -69,8 +69,8 @@ read -p "Select [1]: " choice
 choice=${choice:-1}
 
 CONFIG="/boot/config.txt"
-if [ ! -f "$CONFIG" ]; then
-    CONFIG="/boot/firmware/config.txt" # Pi 5 / Bookworm location
+if [ -f "/boot/firmware/config.txt" ]; then
+    CONFIG="/boot/firmware/config.txt"
 fi
 
 if [ -f "$CONFIG" ]; then
