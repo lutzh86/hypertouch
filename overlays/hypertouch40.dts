@@ -73,6 +73,19 @@
                 touchscreen-inverted-y;
                 touchscreen-swapped-x-y;
             };
+
+            gt911_5d: gt911@5d {
+                compatible = "goodix,gt911";
+                reg = <0x5d>;
+                interrupt-parent = <&gpio>;
+                interrupts = <27 2>; /* IRQ_TYPE_EDGE_FALLING */
+                touchscreen-size-x = <480>;
+                touchscreen-size-y = <800>;
+                touchscreen-x-mm = <51>;
+                touchscreen-y-mm = <85>;
+                touchscreen-inverted-y;
+                touchscreen-swapped-x-y;
+            };
         };
     };
 
