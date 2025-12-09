@@ -1,0 +1,154 @@
+/*
+ * HyperTouch 4.0 KMS/DRM Driver Overlay
+ * Based on Pimoroni HyperPixel 4.0 but adapted for HyperTouch 4.0 pinout
+ *
+ * Differences to HyperPixel 4.0:
+ * - No Reset GPIO for Touch (GPIO 22 is DPI Red 4 on HyperTouch)
+ * - Custom Backlight Driver (AL3050 SingleWire) instead of PWM
+ */
+
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/bcm2835.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+    compatible = "brcm,bcm2835";
+
+    /* 1. Disable the standard framebuffer if we want full KMS, 
+       but usually vc4-kms-v3d handles this. 
+       We target the 'dpi' node provided by vc4-kms-v3d. */
+
+    fragment@0 {
+        target = <&gpio>;
+        __overlay__ {
+            dpi18_pins: dpi18_pins {
+                brcm,pins = <0 1 2 3 4 5 6 7 8 9 12 13 14 15 16 17 20 21 22 23 24 25>;
+                brcm,function = <BCM2835_FSEL_ALT2>; /* DPI */
+                brcm,pull = <BCM2835_PUD_OFF>;
+            };
+        };
+    };
+
+    fragment@1 {
+        target-path = "/";
+        __overlay__ {
+            /* Define the panel */
+            panel: panel {
+                compatible = "panel-dpi";
+                /* We use the custom backlight driver node defined below */
+                backlight = <&backlight>;
+                
+                width-mm = <52>;
+                height-mm = <86>;
+                bus-format = <0x1015>; /* MEDIA_BUS_FMT_RGB666_1X18 */
+
+                panel-timing {
+                    clock-frequency = <32000000>;
+                    hactive = <480>;
+                    hfront-porch = <10>;
+                    hsync-len = <16>;
+                    hback-porch = <59>;
+                    hsync-active = <0>; /* 0 = Low active, 1 = High */
+                    
+                    vactive = <800>;
+                    vfront-porch = <15>;
+                    vsync-len = <113>;
+                    vback-porch = <15>;
+                    vsync-active = <0>;
+
+                    de-active = <1>; /* High active */
+                    pixelclk-active = <1>; /* High (rising edge) */
+                };
+
+                port {
+                    panel_in: endpoint {
+                        remote-endpoint = <&dpi_out>;
+                    };
+                };
+            };
+        };
+    };
+
+    /* 2. Hook up panel to VC4 DPI output */
+    fragment@2 {
+        target = <&dpi>; /* defined in vc4-kms-v3d overlay usually */
+        __overlay__ {
+            status = "okay";
+            pinctrl-names = "default";
+            pinctrl-0 = <&dpi18_pins>;
+
+            port {
+                dpi_out: endpoint {
+                    remote-endpoint = <&panel_in>;
+                };
+            };
+        };
+    };
+
+    /* 3. Touch Controller (Goodix) */
+    fragment@3 {
+        target = <&i2c_gpio>; /* Using Software I2C on GPIO 10/11 */
+        __overlay__ {
+            status = "okay";
+            /* If i2c_gpio is not defined in base DT, we might need to define it here or rely on i2c-gpio overlay */
+            
+            gt911: gt911@14 {
+                compatible = "goodix,gt911";
+                reg = <0x14>;
+                interrupt-parent = <&gpio>;
+                interrupts = <27 IRQ_TYPE_EDGE_FALLING>;
+                /* 
+                 * No reset-gpios defined: The Reset line is pulled High via 
+                 * a hardware resistor (3.3V). It is not connected to a GPIO.
+                 * Address selection (0x14 vs 0x5D) depends solely on the 
+                 * state of INT (GPIO 27) at power-on.
+                 */
+                touchscreen-size-x = <480>;
+                touchscreen-size-y = <800>;
+                touchscreen-x-mm = <51>;
+                touchscreen-y-mm = <85>;
+                touchscreen-swapped-x-y;
+            };
+        };
+    };
+    
+    /* 4. Define Software I2C Bus (if not present) */
+    fragment@4 {
+        target-path = "/";
+        __overlay__ {
+            i2c_gpio: i2c@0 {
+                compatible = "i2c-gpio";
+                gpios = <&gpio 10 GPIO_ACTIVE_HIGH /* sda */
+                         &gpio 11 GPIO_ACTIVE_HIGH /* scl */
+                        >;
+                i2c-gpio,delay-us = <4>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                status = "okay";
+            };
+        };
+    };
+
+    /* 5. Custom Backlight Driver Hookup */
+    fragment@5 {
+        target-path = "/soc";
+        __overlay__ {
+            backlight: backlight {
+                compatible = "hypertouch40_bl";
+                bl-gpios = <&gpio 19 0>;
+                clk-gpios = <&gpio 27 0>;
+                mosi-gpios = <&gpio 26 0>;
+                cs-gpios = <&gpio 18 0>;
+            };
+        };
+    };
+
+    __overrides__ {
+        touchscreen-inverted-x = <&gt911>,"touchscreen-inverted-x";
+        touchscreen-inverted-y = <&gt911>,"touchscreen-inverted-y";
+        touchscreen-swapped-x-y = <&gt911>,"touchscreen-swapped-x-y";
+    };
+};

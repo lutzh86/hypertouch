@@ -1,52 +1,52 @@
-# HyperTouch 4.0 Kernel driver
+# HyperTouch 4.0 Drivers & Utilities
 
-HyperTouch 4.0 kernel driver
+Welcome to the official repository for the **HyperTouch 4.0** display for Raspberry Pi.
 
-guide for raspberry pi 
+This repository contains:
+*   **Kernel Drivers** (DKMS based) for Backlight and LCD Initialization.
+*   **Device Tree Overlays** for both Modern (KMS) and Legacy systems.
+*   **Documentation** and Datasheets.
 
-## 1. prerequisites
+## Quick Installation (One-Line)
+
+Run this command on your Raspberry Pi to install the driver automatically:
+
 ```bash
-sudo apt-get install dkms git
+curl https://raw.githubusercontent.com/lutzh86/hypertouch/main/get-hypertouch.sh | sudo bash
 ```
 
-## 2. clone repository
+*Note: Replace `main` with the correct branch name if necessary.*
 
-```bash
-git clone https://github.com/shpi/hypertouch40
-```
+## Manual Installation
 
-## 3. install
-```bash
-cd hypertouch40
-   sudo ln -s /home/pi/hypertouch40 /usr/src/hypertouch40-1.0
-   sudo dkms install hypertouch40/1.0 
-   sudo dtc -I dts -O dtb -o /boot/overlays/hypertouch40.dtbo hypertouch40.dts
-   ```
-   
+1.  Clone this repository:
+    ```bash
+    git clone https://github.com/lutzh86/hypertouch hypertouch40
+    cd hypertouch40
+    ```
+2.  Run the installer:
+    ```bash
+    sudo ./install.sh
+    ```
+3.  Choose your driver version (KMS is recommended for Pi 4/5/Zero2W).
+4.  Reboot.
 
-## 4. update /boot/config.txt
+## Important Hardware Note (I2C Address)
 
-add following lines to config.txt
+The Touch Controller on this display chooses its I2C address (`0x14` or `0x5d`) based on the state of the Interrupt Pin (GPIO 27) at power-on.
+Since the Reset Pin is **hardwired to 3.3V**, software cannot reset the chip to fix a wrong address.
 
-```bash
-sudo nano /boot/config.txt
-```
+The installer applies a fix in `/boot/config.txt` (`gpio=27=pu`) to force the pin HIGH during boot, ensuring address `0x14` is selected.
 
-```bash
-display_rotate=3
-enable_dpi_lcd=1
-dpi_group=2
-dpi_mode=87
-dpi_output_format=0x7f216
-dpi_timings=480 0 10 16 59 800 0 15 113 15 0 0 0 60 0 32000000 6
-dtoverlay=hypertouch40
-dtparam=touchscreen-swapped-x-y
-dtparam=touchscreen-inverted-x
-```
+## Directory Structure
 
-## Control backlight (min:0 max:31)
+*   **`driver/`**: Source code for the `hypertouch40_bl` kernel module. Uses DKMS for automatic updates.
+*   **`overlays/`**: Device Tree Sources (`.dts`) for KMS and Legacy modes.
+*   **`docs/`**: Manuals and datasheets (including `TXW397017S4-AS_SPEC.pdf`).
+*   **`install.sh`**: Main installation script.
 
-```bash
-echo 31 | sudo tee /sys/class/backlight/soc\:backlight/brightness
-```
+## Troubleshooting
 
+If the touch does not work:
+1.  Check the I2C address: `i2cdetect -y 11`
+2.  It should be `14`. If it is `5d`, the pull-up fix might not be active or the cable is loose.
