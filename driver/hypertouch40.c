@@ -284,20 +284,24 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     int ret_mosi, ret_cs, ret_clk;
     bool use_direct_access = false;
 
-    // 1. Try to find BCM2835 GPIO node (Pi 0-4)
+    // 1. Try to find BCM2835 or BCM2711 GPIO node (Pi 0-4)
     gpio_node = of_find_compatible_node(NULL, NULL, "brcm,bcm2835-gpio");
+    if (!gpio_node) {
+        gpio_node = of_find_compatible_node(NULL, NULL, "brcm,bcm2711-gpio");
+    }
+    
     if (gpio_node) {
         gpio_base = of_iomap(gpio_node, 0);
         of_node_put(gpio_node);
         
         if (gpio_base) {
             use_direct_access = true;
-            dev_info(dev, "BCM2835 GPIO detected. Enabling Direct Memory Access for GPIO 27.\n");
+            dev_info(dev, "BCM2835/2711 GPIO detected. Enabling Direct Memory Access for GPIO 27.\n");
         } else {
-            dev_warn(dev, "BCM2835 GPIO node found but mapping failed.\n");
+            dev_warn(dev, "GPIO node found but mapping failed.\n");
         }
     } else {
-        dev_warn(dev, "BCM2835 GPIO not found (likely Pi 5 / RP1). Direct Access disabled. Using standard API.\n");
+        dev_warn(dev, "Standard BCM GPIO not found (likely Pi 5 / RP1). Direct Access disabled. Using standard API.\n");
     }
 
     // 2. Request Non-Conflicted GPIOs (MOSI, CS) normally
