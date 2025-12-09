@@ -120,8 +120,6 @@
                          &gpio 11 0 /* scl - GPIO_ACTIVE_HIGH */
                         >;
                 i2c-gpio,delay-us = <4>;
-                #address-cells = <1>;
-                #size-cells = <0>;
                 status = "okay";
             };
         };
