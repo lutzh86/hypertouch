@@ -49,6 +49,7 @@
 #define GPIO_CS   18
 
 /* BCM2835 GPIO Register Offsets */
+#define BCM2835_GPFSEL1 0x04  /* Pins 10-19 */
 #define BCM2835_GPFSEL2 0x08  /* Pins 20-29 */
 #define BCM2835_GPSET0  0x1C  /* Pins 0-31 */
 #define BCM2835_GPCLR0  0x28  /* Pins 0-31 */
@@ -64,27 +65,42 @@ struct al3050_bl_data {
 static void __iomem *gpio_base;
 
 static void direct_gpio_mode_out(int gpio) {
-    u32 fsel;
+    u32 fsel, shift, offset;
     if (!gpio_base) return;
     
-    // Only handling GPIO 27 for now (FSEL2)
-    if (gpio == 27) {
-        fsel = readl(gpio_base + BCM2835_GPFSEL2);
-        fsel &= ~(7 << 21); // Clear bits 23-21 (GPIO 27)
-        fsel |=  (1 << 21); // Set to 001 (Output)
-        writel(fsel, gpio_base + BCM2835_GPFSEL2);
+    if (gpio >= 10 && gpio <= 19) {
+        offset = BCM2835_GPFSEL1;
+        shift = (gpio - 10) * 3;
+    } else if (gpio >= 20 && gpio <= 29) {
+        offset = BCM2835_GPFSEL2;
+        shift = (gpio - 20) * 3;
+    } else {
+        return; // Not supported in this simple hack
     }
+
+    fsel = readl(gpio_base + offset);
+    fsel &= ~(7 << shift); // Clear bits (Input)
+    fsel |=  (1 << shift); // Set to 001 (Output)
+    writel(fsel, gpio_base + offset);
 }
 
 static void direct_gpio_mode_in(int gpio) {
-    u32 fsel;
+    u32 fsel, shift, offset;
     if (!gpio_base) return;
 
-    if (gpio == 27) {
-        fsel = readl(gpio_base + BCM2835_GPFSEL2);
-        fsel &= ~(7 << 21); // Clear bits 23-21 (Input is 000)
-        writel(fsel, gpio_base + BCM2835_GPFSEL2);
+    if (gpio >= 10 && gpio <= 19) {
+        offset = BCM2835_GPFSEL1;
+        shift = (gpio - 10) * 3;
+    } else if (gpio >= 20 && gpio <= 29) {
+        offset = BCM2835_GPFSEL2;
+        shift = (gpio - 20) * 3;
+    } else {
+        return;
     }
+
+    fsel = readl(gpio_base + offset);
+    fsel &= ~(7 << shift); // Clear bits (Input is 000)
+    writel(fsel, gpio_base + offset);
 }
 
 static void direct_gpio_set(int gpio, int value) {
@@ -281,9 +297,7 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     
     // Request GPIOs
     struct device_node *gpio_node;
-    int ret_mosi, ret_cs, ret_clk;
-    bool use_direct_access = false;
-
+    
     // 1. Try to find BCM2835 or BCM2711 GPIO node (Pi 0-4)
     gpio_node = of_find_compatible_node(NULL, NULL, "brcm,bcm2835-gpio");
     if (!gpio_node) {
@@ -293,45 +307,22 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     if (gpio_node) {
         gpio_base = of_iomap(gpio_node, 0);
         of_node_put(gpio_node);
-        
-        if (gpio_base) {
-            use_direct_access = true;
-            dev_info(dev, "BCM2835/2711 GPIO detected. Enabling Direct Memory Access for GPIO 27.\n");
-        } else {
-            dev_warn(dev, "GPIO node found but mapping failed.\n");
-        }
-    } else {
-        dev_warn(dev, "Standard BCM GPIO not found (likely Pi 5 / RP1). Direct Access disabled. Using standard API.\n");
     }
 
-    // 2. Request Non-Conflicted GPIOs (MOSI, CS) normally
-    ret_mosi = gpio_request(GPIO_MOSI, "lcd_mosi");
-    ret_cs   = gpio_request(GPIO_CS, "lcd_cs");
-
-    // 3. Request CLK (27) only if NOT using direct access
-    if (!use_direct_access) {
-        ret_clk = gpio_request(GPIO_CLK, "lcd_clk");
-        if (ret_clk != 0) {
-            dev_err(dev, "Failed to request GPIO_CLK (27) via standard API (ret=%d). LCD Init might fail if pin is busy.\n", ret_clk);
-        }
-    } else {
-        ret_clk = 0; // Pretend success for logic flow, but we won't use the standard handle
-    }
-
-    if (ret_mosi == 0 && ret_cs == 0 && (use_direct_access || ret_clk == 0)) {
+    if (gpio_base) {
+        dev_info(dev, "BCM2835/2711 GPIO detected. Using Direct Memory Access for Init.\n");
         
-        // Set Output Direction
-        gpio_direction_output(GPIO_CS, 1);
-        gpio_direction_output(GPIO_MOSI, 0);
+        // Hijack Pins: Set Output
+        direct_gpio_mode_out(GPIO_CS);   // 18
+        direct_gpio_mode_out(GPIO_MOSI); // 26
+        direct_gpio_mode_out(GPIO_CLK);  // 27
         
-        if (use_direct_access) {
-            direct_gpio_mode_out(GPIO_CLK);
-            direct_gpio_set(GPIO_CLK, 1);
-        } else {
-            gpio_direction_output(GPIO_CLK, 1);
-        }
+        // Initial State
+        direct_gpio_set(GPIO_CS, 1);
+        direct_gpio_set(GPIO_MOSI, 0);
+        direct_gpio_set(GPIO_CLK, 1);
         
-        dev_info(dev, "Initializing LCD Panel...\n");
+        dev_info(dev, "Initializing LCD Panel (Direct Access)...\n");
         mdelay(100);
 
         for (x = 0; x < sizeof(data_lcd) / sizeof(uint16_t); x++) {
@@ -342,51 +333,36 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
                 uint16_t d = data_lcd[x];
                 uint8_t count = 9;
 
-                gpio_set_value(GPIO_CS, 0);
+                direct_gpio_set(GPIO_CS, 0);
                 do {
-                    gpio_set_value(GPIO_MOSI, ((d & (1 << (count - 1))) != 0));
+                    direct_gpio_set(GPIO_MOSI, ((d & (1 << (count - 1))) != 0));
                     
-                    if (use_direct_access) {
-                        direct_gpio_set(GPIO_CLK, 0);
-                        udelay(T_START_NS);
-                        direct_gpio_set(GPIO_CLK, 1);
-                        udelay(T_START_NS);
-                    } else {
-                        gpio_set_value(GPIO_CLK, 0);
-                        udelay(T_START_NS);
-                        gpio_set_value(GPIO_CLK, 1);
-                        udelay(T_START_NS);
-                    }
+                    direct_gpio_set(GPIO_CLK, 0);
+                    udelay(T_START_NS);
+                    direct_gpio_set(GPIO_CLK, 1);
+                    udelay(T_START_NS);
                     
                     count--;
                 } while (count);
 
-                gpio_set_value(GPIO_MOSI, 0);
-                gpio_set_value(GPIO_CS, 1);
+                direct_gpio_set(GPIO_MOSI, 0);
+                direct_gpio_set(GPIO_CS, 1);
                 udelay(T_START_NS);
             }
         }
         
         dev_info(dev, "LCD Init done. Releasing GPIOs.\n");
         
-        if (use_direct_access) {
-            direct_gpio_mode_in(GPIO_CLK);
-        }
+        // Restore Pins to Input (Safe State)
+        direct_gpio_mode_in(GPIO_CS);
+        direct_gpio_mode_in(GPIO_MOSI);
+        direct_gpio_mode_in(GPIO_CLK);
         
-    } else {
-        dev_warn(dev, "Failed to request GPIOs: MOSI(26)=%d, CS(18)=%d, CLK(27)=%d, DirectMode=%d. Init Skipped.\n", 
-                 ret_mosi, ret_cs, ret_clk, use_direct_access);
-    }
-
-    // Release Standard GPIOs
-    if (ret_mosi == 0) gpio_free(GPIO_MOSI);
-    if (ret_cs == 0)   gpio_free(GPIO_CS);
-    if (!use_direct_access && ret_clk == 0) gpio_free(GPIO_CLK);
-    
-    // Unmap GPIO Registers
-    if (gpio_base) {
         iounmap(gpio_base);
         gpio_base = NULL;
+        
+    } else {
+        dev_warn(dev, "BCM GPIO not found (likely Pi 5). Direct Access failed. LCD Init Skipped.\n");
     }
 
     platform_set_drvdata(pdev, bl);
