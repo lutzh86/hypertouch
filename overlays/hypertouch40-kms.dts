@@ -10,24 +10,18 @@
 /dts-v1/;
 /plugin/;
 
-#include <dt-bindings/gpio/gpio.h>
-#include <dt-bindings/pinctrl/bcm2835.h>
-#include <dt-bindings/interrupt-controller/irq.h>
+/* Removed includes to avoid preprocessing errors with standard dtc */
 
 / {
     compatible = "brcm,bcm2835";
-
-    /* 1. Disable the standard framebuffer if we want full KMS, 
-       but usually vc4-kms-v3d handles this. 
-       We target the 'dpi' node provided by vc4-kms-v3d. */
 
     fragment@0 {
         target = <&gpio>;
         __overlay__ {
             dpi18_pins: dpi18_pins {
                 brcm,pins = <0 1 2 3 4 5 6 7 8 9 12 13 14 15 16 17 20 21 22 23 24 25>;
-                brcm,function = <BCM2835_FSEL_ALT2>; /* DPI */
-                brcm,pull = <BCM2835_PUD_OFF>;
+                brcm,function = <6>; /* BCM2835_FSEL_ALT2 (DPI) */
+                brcm,pull = <0>;     /* BCM2835_PUD_OFF */
             };
         };
     };
@@ -93,13 +87,12 @@
         target = <&i2c_gpio>; /* Using Software I2C on GPIO 10/11 */
         __overlay__ {
             status = "okay";
-            /* If i2c_gpio is not defined in base DT, we might need to define it here or rely on i2c-gpio overlay */
             
             gt911: gt911@14 {
                 compatible = "goodix,gt911";
                 reg = <0x14>;
                 interrupt-parent = <&gpio>;
-                interrupts = <27 IRQ_TYPE_EDGE_FALLING>;
+                interrupts = <27 2>; /* IRQ_TYPE_EDGE_FALLING */
                 /* 
                  * No reset-gpios defined: The Reset line is pulled High via 
                  * a hardware resistor (3.3V). It is not connected to a GPIO.
@@ -121,8 +114,8 @@
         __overlay__ {
             i2c_gpio: i2c@0 {
                 compatible = "i2c-gpio";
-                gpios = <&gpio 10 GPIO_ACTIVE_HIGH /* sda */
-                         &gpio 11 GPIO_ACTIVE_HIGH /* scl */
+                gpios = <&gpio 10 0 /* sda - GPIO_ACTIVE_HIGH */
+                         &gpio 11 0 /* scl - GPIO_ACTIVE_HIGH */
                         >;
                 i2c-gpio,delay-us = <4>;
                 #address-cells = <1>;

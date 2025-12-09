@@ -18,13 +18,31 @@ SRC_DIR="/usr/src/hypertouch40-1.0"
 echo -e "${GREEN}HyperTouch 4.0 Installer (2025)${NC}"
 echo "================================"
 
-# --- 1. Driver Installation (DKMS) ---
+# --- 1. Dependencies ---
+echo -e "${YELLOW}Installing Dependencies...${NC}"
+apt-get update
+
+# Try to find the correct kernel headers
+HEADERS_PKG="raspberrypi-kernel-headers"
+if ! apt-cache show "$HEADERS_PKG" >/dev/null 2>&1; then
+    echo "raspberrypi-kernel-headers not found, trying linux-headers-$(uname -r)..."
+    HEADERS_PKG="linux-headers-$(uname -r)"
+fi
+
+# Install basics first
+apt-get install -y dkms device-tree-compiler i2c-tools git $HEADERS_PKG
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}Error: Failed to install required packages.$NC"
+    echo "Please ensure you have internet access and your package lists are up to date."
+    exit 1
+fi
+
+# --- 2. Driver Installation (DKMS) ---
 echo -e "${YELLOW}Installing/Updating Kernel Module (DKMS)...${NC}"
-apt-get update >/dev/null
-apt-get install -y dkms raspberrypi-kernel-headers device-tree-compiler i2c-tools >/dev/null
 
 # Remove old DKMS if exists
-dkms remove hypertouch40/1.0 --all 2>/dev/null
+dkms remove hypertouch40/1.0 --all >/dev/null 2>&1
 
 # Copy source
 rm -rf $SRC_DIR
@@ -33,10 +51,15 @@ cp $DRIVER_DIR/* $SRC_DIR/
 
 # Build and Install
 dkms add hypertouch40/1.0
-dkms build hypertouch40/1.0
-dkms install hypertouch40/1.0
+if [ $? -ne 0 ]; then echo -e "${RED}DKMS Add failed${NC}"; exit 1; fi
 
-# --- 2. Overlay Selection ---
+dkms build hypertouch40/1.0
+if [ $? -ne 0 ]; then echo -e "${RED}DKMS Build failed${NC}"; exit 1; fi
+
+dkms install hypertouch40/1.0
+if [ $? -ne 0 ]; then echo -e "${RED}DKMS Install failed${NC}"; exit 1; fi
+
+# --- 3. Overlay Selection ---
 echo ""
 echo "Select Display Driver Mode:"
 echo -e "1) ${GREEN}KMS/DRM (Recommended)${NC} - Modern graphics stack, better performance."
@@ -46,7 +69,16 @@ read -p "Select [1]: " choice
 choice=${choice:-1}
 
 CONFIG="/boot/config.txt"
-cp $CONFIG $CONFIG.bak
+if [ ! -f "$CONFIG" ]; then
+    CONFIG="/boot/firmware/config.txt" # Pi 5 / Bookworm location
+fi
+
+if [ -f "$CONFIG" ]; then
+    cp $CONFIG $CONFIG.bak
+else
+    echo -e "${RED}Error: config.txt not found!${NC}"
+    exit 1
+fi
 
 # Cleanup config.txt
 sed -i '/dtoverlay=hypertouch40/d' $CONFIG
@@ -68,6 +100,12 @@ echo "gpio=27=pu # Fix for Touch Controller Address" >> $CONFIG
 if [ "$choice" -eq "1" ]; then
     echo -e "${GREEN}Installing KMS Overlay...${NC}"
     dtc -I dts -O dtb -o $OVERLAY_DIR/hypertouch40-kms.dtbo $OVERLAY_DIR/hypertouch40-kms.dts
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: DTC Compilation failed.${NC}"
+        exit 1
+    fi
+    
     cp $OVERLAY_DIR/hypertouch40-kms.dtbo /boot/overlays/
     
     echo "dtoverlay=vc4-kms-v3d" >> $CONFIG
@@ -75,6 +113,12 @@ if [ "$choice" -eq "1" ]; then
 else
     echo -e "${YELLOW}Installing Legacy Overlay...${NC}"
     dtc -I dts -O dtb -o $OVERLAY_DIR/hypertouch40.dtbo $OVERLAY_DIR/hypertouch40.dts
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Error: DTC Compilation failed.${NC}"
+        exit 1
+    fi
+
     cp $OVERLAY_DIR/hypertouch40.dtbo /boot/overlays/
     
     cat <<EOT >> $CONFIG
