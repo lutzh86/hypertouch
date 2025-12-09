@@ -80,6 +80,12 @@ else
     exit 1
 fi
 
+# Disable conflicting config.txt entries
+# dtparam=i2c_arm=on conflicts with DPI (GPIO 2/3)
+sed -i '/^dtparam=i2c_arm=on/s/^/#/' $CONFIG
+# enable_uart=1 conflicts with DPI (GPIO 14/15)
+sed -i '/^enable_uart=1/s/^/#/' $CONFIG
+
 # Cleanup config.txt
 sed -i '/dtoverlay=hypertouch40/d' $CONFIG
 sed -i '/dtoverlay=vc4-kms-v3d/d' $CONFIG

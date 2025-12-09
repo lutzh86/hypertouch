@@ -374,7 +374,8 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
         }
         
     } else {
-        dev_warn(dev, "Failed to request necessary GPIOs. Init Skipped.\n");
+        dev_warn(dev, "Failed to request GPIOs: MOSI(26)=%d, CS(18)=%d, CLK(27)=%d, DirectMode=%d. Init Skipped.\n", 
+                 ret_mosi, ret_cs, ret_clk, use_direct_access);
     }
 
     // Release Standard GPIOs
