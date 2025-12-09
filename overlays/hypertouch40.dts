@@ -54,8 +54,6 @@
         __overlay__ {
                         i2c_gpio: i2c@0 {
                             compatible = "i2c-gpio";
-                            #address-cells = <1>;
-                            #size-cells = <0>;
                             gpios = <&gpio 10 0 /* sda */
                                  &gpio 11 0 /* scl */
                                 >;
