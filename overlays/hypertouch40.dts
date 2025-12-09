@@ -24,17 +24,16 @@
     };
 
     fragment@2 {
-        target-path = "/soc";
-        __overlay__ {
-            backlight: backlight {
-                compatible = "hypertouch40_bl";
-                bl-gpios = <&gpio 19 0>;
-                clk-gpios = <&gpio 27 0>;
-                mosi-gpios = <&gpio 26 0>;
-                cs-gpios = <&gpio 18 0>;
-            };
+                target-path = "/soc";
+                __overlay__ {
+                        backlight: backlight {
+                                compatible = "hypertouch40_bl";
+                                bl-gpios = <&gpio 19 0>;
+                                fb = <0xdeadbeef>;
+
+                        };
+                };
         };
-    };
 
     /* Define the I2C-GPIO bus first */
     fragment@3 {

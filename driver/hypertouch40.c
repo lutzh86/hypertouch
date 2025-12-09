@@ -41,9 +41,14 @@
 #define RFA_ACK_WAIT 3
 #define RFA_MAX_ACK_TIME 900
 
+/* Hardcoded GPIOs for Raspberry Pi Header */
+#define GPIO_CLK  27
+#define GPIO_MOSI 26
+#define GPIO_CS   18
+
 struct al3050_bl_data {
     struct device *fbdev;
-    struct gpio_desc *gpiod, *gpiock, *gpiomosi, *gpiocs;
+    struct gpio_desc *gpiod; /* Only BL pin is kept */
     int last_brightness;
     int power;
     int rfa_en;
@@ -64,21 +69,21 @@ static void al3050_init(struct backlight_device *bl) {
     local_irq_restore(flags);
 }
 
-static void al3050_write_lcd_value(struct al3050_bl_data *pchip, uint16_t data) {
+static void lcd_spi_write(int mosi, int clk, int cs, uint16_t data) {
     uint8_t count = 9;
 
-    gpiod_direction_output(pchip->gpiocs, 0);
+    gpio_set_value(cs, 0);
     do {
-        gpiod_direction_output(pchip->gpiomosi, (((data & (1 << (count - 1))) != 0) << 2));
-        gpiod_direction_output(pchip->gpiock, 0);
+        gpio_set_value(mosi, ((data & (1 << (count - 1))) != 0));
+        gpio_set_value(clk, 0);
         udelay(T_START_NS);
-        gpiod_direction_output(pchip->gpiock, 1);
+        gpio_set_value(clk, 1);
         udelay(T_START_NS);
         count--;
     } while (count);
 
-    gpiod_direction_output(pchip->gpiomosi, 0);
-    gpiod_direction_output(pchip->gpiocs, 1);
+    gpio_set_value(mosi, 0);
+    gpio_set_value(cs, 1);
     udelay(T_START_NS);
 }
 
@@ -137,7 +142,6 @@ static int al3050_backlight_set_value(struct backlight_device *bl) {
             max_ack_time -= RFA_ACK_WAIT;
         }
         if (max_ack_time <= 0) {
-            printk(KERN_ERR "AL3050 no ack, reinit.\n");
             al3050_init(bl);
         } else {
             udelay(max_ack_time);
@@ -229,8 +233,7 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     if (!pchip)
         return -ENOMEM;
 
-    // Get GPIOs. 
-    // Uses "bl" -> "bl-gpios" (or "bl-gpio").
+    // Get BL GPIO (Managed, kept forever) - Still from DTS "bl-gpios"
     pchip->gpiod = devm_gpiod_get(dev, "bl", GPIOD_ASIS);
     if (IS_ERR(pchip->gpiod))
         return dev_err_probe(dev, PTR_ERR(pchip->gpiod), "Failed to get bl-gpio\n");
@@ -249,38 +252,48 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
         return PTR_ERR(bl);
 
     // Initialization GPIOs for LCD Panel
-    pchip->gpiock = devm_gpiod_get(dev, "clk", GPIOD_ASIS);
-    pchip->gpiomosi = devm_gpiod_get(dev, "mosi", GPIOD_ASIS);
-    pchip->gpiocs = devm_gpiod_get(dev, "cs", GPIOD_ASIS);
-
-    if (!IS_ERR(pchip->gpiock) && !IS_ERR(pchip->gpiomosi) && !IS_ERR(pchip->gpiocs)) {
-        dev_info(dev, "Initializing LCD Panel...\n");
-        gpiod_direction_output(pchip->gpiocs, 1);
-        gpiod_direction_output(pchip->gpiock, 1);
-        gpiod_direction_output(pchip->gpiomosi, 0);
+    // USING DIRECT GPIO NUMBERS (Legacy API) to avoid DTS conflict
+    
+    // Request GPIOs
+    if (gpio_request(GPIO_CLK, "lcd_clk") == 0 &&
+        gpio_request(GPIO_MOSI, "lcd_mosi") == 0 &&
+        gpio_request(GPIO_CS, "lcd_cs") == 0) {
+        
+        // Set Output Direction
+        gpio_direction_output(GPIO_CS, 1);
+        gpio_direction_output(GPIO_CLK, 1);
+        gpio_direction_output(GPIO_MOSI, 0);
+        
+        dev_info(dev, "Initializing LCD Panel (Legacy GPIO)...");
         mdelay(100);
 
         for (x = 0; x < sizeof(data_lcd) / sizeof(uint16_t); x++) {
             if (data_lcd[x] == 0xffff) {
                 mdelay(100);
             } else {
-                al3050_write_lcd_value(pchip, data_lcd[x]);
+                lcd_spi_write(GPIO_MOSI, GPIO_CLK, GPIO_CS, data_lcd[x]);
             }
         }
         
-        // Critical: Release CLK (GPIO 27) so it can be used as Touch Interrupt
-        gpiod_direction_input(pchip->gpiock);
+        dev_info(dev, "LCD Init done. Releasing GPIOs.");
         
-        // Note: We don't free them here because devm managed them, 
-        // but we set direction input which should be safe.
+        // Release GPIOs immediately
+        gpio_free(GPIO_CLK);
+        gpio_free(GPIO_MOSI);
+        gpio_free(GPIO_CS);
+        
     } else {
-        dev_warn(dev, "LCD Init GPIOs missing, skipping LCD initialization (Touch INT might be safe)\n");
+        dev_warn(dev, "Failed to request LCD Init GPIOs (27, 26, 18). Skipping Init.");
+        // Ensure no partial claim
+        gpio_free(GPIO_CLK); 
+        gpio_free(GPIO_MOSI);
+        gpio_free(GPIO_CS);
     }
 
     platform_set_drvdata(pdev, bl);
 
     al3050_init(bl);
-    dev_info(dev, "HyperTouch 4.0 Backlight Driver Initialized\n");
+    dev_info(dev, "HyperTouch 4.0 Backlight Driver Initialized");
 
     return 0;
 }
