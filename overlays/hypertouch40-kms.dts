@@ -104,6 +104,7 @@
                 touchscreen-x-mm = <51>;
                 touchscreen-y-mm = <85>;
                 touchscreen-inverted-y;
+                touchscreen-swapped-x-y;
             };
         };
     };
