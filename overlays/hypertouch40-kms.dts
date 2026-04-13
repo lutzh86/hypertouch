@@ -121,6 +121,7 @@
             backlight: backlight {
                 compatible = "hypertouch40_bl";
                 bl-gpios = <&gpio 19 0>;
+                init-gpios = <&gpio 18 0>, <&gpio 26 0>, <&gpio 27 0>;
             };
         };
     };

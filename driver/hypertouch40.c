@@ -112,6 +112,84 @@ static void direct_gpio_set(int gpio, int value) {
         writel(1 << gpio, gpio_base + BCM2835_GPCLR0);
 }
 
+static int hypertouch40_init_lcd_via_gpiod(struct device *dev, const uint16_t *data_lcd,
+                                           size_t data_lcd_len)
+{
+    struct gpio_desc *cs;
+    struct gpio_desc *mosi;
+    struct gpio_desc *clk;
+    int ret = 0;
+    size_t x;
+
+    cs = gpiod_get_index(dev, "init", 0, GPIOD_OUT_HIGH);
+    if (IS_ERR(cs))
+        return dev_err_probe(dev, PTR_ERR(cs), "Failed to get init CS GPIO\n");
+
+    mosi = gpiod_get_index(dev, "init", 1, GPIOD_OUT_LOW);
+    if (IS_ERR(mosi)) {
+        ret = dev_err_probe(dev, PTR_ERR(mosi), "Failed to get init MOSI GPIO\n");
+        goto out_put_cs;
+    }
+
+    clk = gpiod_get_index(dev, "init", 2, GPIOD_OUT_HIGH);
+    if (IS_ERR(clk)) {
+        ret = dev_err_probe(dev, PTR_ERR(clk), "Failed to get init CLK GPIO\n");
+        goto out_put_mosi;
+    }
+
+    dev_warn(dev, "Pi 5 beta path: initializing LCD Panel via gpiod bit-banging.\n");
+    mdelay(100);
+
+    for (x = 0; x < data_lcd_len; x++) {
+        if (data_lcd[x] == 0xffff) {
+            mdelay(200);
+            continue;
+        }
+
+        {
+            uint16_t d = data_lcd[x];
+            uint8_t count = 9;
+
+            gpiod_set_value(clk, 1);
+            gpiod_set_value(cs, 0);
+
+            do {
+                gpiod_set_value(mosi, !!(d & (1 << (count - 1))));
+                gpiod_set_value(clk, 0);
+                udelay(T_START_NS);
+                gpiod_set_value(clk, 1);
+                udelay(T_START_NS);
+                count--;
+            } while (count);
+
+            gpiod_set_value(mosi, 0);
+            gpiod_set_value(cs, 1);
+            udelay(T_START_NS);
+        }
+    }
+
+    mdelay(200);
+
+    /*
+     * Release the init lines after setup so GPIO27 can be claimed by Goodix
+     * as the touchscreen interrupt on Pi 5.
+     */
+    gpiod_direction_input(cs);
+    gpiod_direction_input(mosi);
+    gpiod_direction_input(clk);
+    gpiod_put(clk);
+    gpiod_put(mosi);
+    gpiod_put(cs);
+
+    return 0;
+
+out_put_mosi:
+    gpiod_put(mosi);
+out_put_cs:
+    gpiod_put(cs);
+    return ret;
+}
+
 static void al3050_init(struct backlight_device *bl) {
     struct al3050_bl_data *pchip = bl_get_data(bl);
     unsigned long flags;
@@ -364,8 +442,13 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
         iounmap(gpio_base);
         gpio_base = NULL;
         
+    } else if (of_machine_is_compatible("brcm,bcm2712")) {
+        ret = hypertouch40_init_lcd_via_gpiod(dev, data_lcd,
+                                              ARRAY_SIZE(data_lcd));
+        if (ret)
+            dev_warn(dev, "Pi 5 beta path failed. LCD Init Skipped.\n");
     } else {
-        dev_warn(dev, "BCM GPIO not found (likely Pi 5). Direct Access failed. LCD Init Skipped.\n");
+        dev_warn(dev, "BCM GPIO not found. Direct Access failed. LCD Init Skipped.\n");
     }
 
     platform_set_drvdata(pdev, bl);
