@@ -101,6 +101,7 @@ The installer now offers four built-in rotation presets:
 *   `270°` - Landscape, header on the top
 
 For **KMS**, the installer keeps the touchscreen at its base orientation, writes a Wayfire output/input mapping for `DPI-1`, and installs a desktop autostart helper as a fallback for sessions that need `wlr-randr` or `xrandr`.
+The KMS display timing and DPI data format are aligned with the Raspberry Pi / HyperPixel4 KMS DPI reference values.
 
 For **Legacy**, the installer writes `display_lcd_rotate=` plus matching touchscreen axis settings.
 

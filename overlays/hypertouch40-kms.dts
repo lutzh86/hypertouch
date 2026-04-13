@@ -38,7 +38,7 @@
                 
                 width-mm = <52>;
                 height-mm = <86>;
-                bus-format = <0x1015>; /* MEDIA_BUS_FMT_RGB666_1X18 */
+                bus-format = <0x101f>; /* MEDIA_BUS_FMT_RGB666_1X24_CPADHI */
 
                 panel-timing {
                     clock-frequency = <32000000>;
@@ -55,7 +55,7 @@
                     vsync-active = <0>;
 
                     de-active = <1>; /* High active */
-                    pixelclk-active = <0>; /* 0 = Drive on falling edge, 1 = Rising */
+                    pixelclk-active = <1>; /* Match HyperPixel4 KMS pixclk-invert */
                 };
 
                 port {
