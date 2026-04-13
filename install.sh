@@ -395,7 +395,6 @@ rotation_choice=${rotation_choice:-1}
 case "$rotation_choice" in
     1)
         ROTATION_DEG=0
-        KMS_ROTATION=0
         TOUCH_SWAP="on"
         TOUCH_INVX="off"
         TOUCH_INVY="on"
@@ -403,7 +402,6 @@ case "$rotation_choice" in
         ;;
     2)
         ROTATION_DEG=90
-        KMS_ROTATION=270
         TOUCH_SWAP="off"
         TOUCH_INVX="on"
         TOUCH_INVY="on"
@@ -411,7 +409,6 @@ case "$rotation_choice" in
         ;;
     3)
         ROTATION_DEG=180
-        KMS_ROTATION=180
         TOUCH_SWAP="on"
         TOUCH_INVX="on"
         TOUCH_INVY="off"
@@ -419,7 +416,6 @@ case "$rotation_choice" in
         ;;
     4)
         ROTATION_DEG=270
-        KMS_ROTATION=90
         TOUCH_SWAP="off"
         TOUCH_INVX="off"
         TOUCH_INVY="off"
@@ -476,6 +472,7 @@ sed -i '/gpio=27=pd/d' $CONFIG
 sed -i '/^display_lcd_rotate=/d' $CONFIG
 sed -i '/^dtparam=addr=/d' $CONFIG
 sed -i '/^dtparam=rotate=/d' $CONFIG
+sed -i '/^dtparam=rotation=/d' $CONFIG
 sed -i '/^dtparam=touchscreen-swapped-x-y=/d' $CONFIG
 sed -i '/^dtparam=touchscreen-inverted-x=/d' $CONFIG
 sed -i '/^dtparam=touchscreen-inverted-y=/d' $CONFIG
@@ -508,7 +505,6 @@ if [ "$choice" -eq "1" ]; then
     echo "dtoverlay=vc4-kms-v3d" >> $CONFIG
     echo "dtoverlay=hypertouch40-kms" >> $CONFIG
     echo "dtparam=addr=${TOUCH_ADDR}" >> $CONFIG
-    echo "dtparam=rotate=${KMS_ROTATION}" >> $CONFIG
     echo "dtparam=touchscreen-swapped-x-y=${TOUCH_SWAP}" >> $CONFIG
     echo "dtparam=touchscreen-inverted-x=${TOUCH_INVX}" >> $CONFIG
     echo "dtparam=touchscreen-inverted-y=${TOUCH_INVY}" >> $CONFIG
