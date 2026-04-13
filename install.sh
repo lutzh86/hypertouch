@@ -18,6 +18,125 @@ fi
 DRIVER_DIR="driver"
 OVERLAY_DIR="overlays"
 SRC_DIR="/usr/src/hypertouch40-1.0"
+ROTATION_HELPER="/usr/local/bin/hypertouch-apply-desktop-rotation"
+
+rotation_wayland_transform() {
+    case "$1" in
+        0) echo "normal" ;;
+        90) echo "90" ;;
+        180) echo "180" ;;
+        270) echo "270" ;;
+        *) return 1 ;;
+    esac
+}
+
+rotation_x11_transform() {
+    case "$1" in
+        0) echo "normal" ;;
+        90) echo "right" ;;
+        180) echo "inverted" ;;
+        270) echo "left" ;;
+        *) return 1 ;;
+    esac
+}
+
+desktop_user_home() {
+    local user_name="$1"
+    local passwd_entry
+
+    if [ -n "$user_name" ]; then
+        passwd_entry="$(getent passwd "$user_name" || true)"
+        [ -n "$passwd_entry" ] || return 1
+        printf '%s\n' "$passwd_entry" | cut -d: -f6
+        return 0
+    fi
+
+    return 1
+}
+
+install_kms_rotation_autostart() {
+    local user_name="$1"
+    local user_home="$2"
+    local rotation_deg="$3"
+    local x11_transform wayland_transform autostart_dir desktop_file
+
+    x11_transform="$(rotation_x11_transform "$rotation_deg")" || return 1
+    wayland_transform="$(rotation_wayland_transform "$rotation_deg")" || return 1
+
+    install -m 0755 /dev/null "$ROTATION_HELPER"
+    cat > "$ROTATION_HELPER" <<EOF
+#!/bin/sh
+set -eu
+
+ROTATION_DEG="${rotation_deg}"
+WAYLAND_TRANSFORM="${wayland_transform}"
+X11_TRANSFORM="${x11_transform}"
+OUTPUTS="DPI-1 DSI-1"
+
+apply_wayland() {
+    command -v wlr-randr >/dev/null 2>&1 || return 1
+
+    for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+        for output in \$OUTPUTS; do
+            wlr-randr --output "\$output" --transform "\$WAYLAND_TRANSFORM" >/dev/null 2>&1 && return 0
+        done
+        sleep 2
+    done
+
+    return 1
+}
+
+apply_x11() {
+    command -v xrandr >/dev/null 2>&1 || return 1
+    [ -n "\${DISPLAY:-}" ] || return 1
+
+    for _attempt in 1 2 3 4 5 6 7 8 9 10; do
+        for output in \$OUTPUTS; do
+            xrandr --output "\$output" --rotate "\$X11_TRANSFORM" >/dev/null 2>&1 && return 0
+        done
+        sleep 2
+    done
+
+    return 1
+}
+
+case "\${XDG_SESSION_TYPE:-}" in
+    wayland)
+        apply_wayland || true
+        ;;
+    x11)
+        apply_x11 || true
+        ;;
+    *)
+        apply_wayland || apply_x11 || true
+        ;;
+esac
+EOF
+
+    autostart_dir="${user_home}/.config/autostart"
+    desktop_file="${autostart_dir}/hypertouch-rotation.desktop"
+    mkdir -p "$autostart_dir"
+
+    cat > "$desktop_file" <<EOF
+[Desktop Entry]
+Type=Application
+Name=HyperTouch Rotation
+Comment=Apply HyperTouch desktop rotation after login
+Exec=${ROTATION_HELPER}
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+
+    chown root:root "$ROTATION_HELPER"
+    chown "$user_name:$user_name" "$autostart_dir" "$desktop_file"
+}
+
+remove_kms_rotation_autostart() {
+    local user_home="$1"
+
+    rm -f "$ROTATION_HELPER"
+    rm -f "${user_home}/.config/autostart/hypertouch-rotation.desktop"
+}
 
 detect_touch_address() {
     local model="$1"
@@ -312,6 +431,16 @@ case "$rotation_choice" in
         ;;
 esac
 
+DESKTOP_USER="${SUDO_USER:-}"
+DESKTOP_HOME=""
+if [ -n "$DESKTOP_USER" ]; then
+    DESKTOP_HOME="$(desktop_user_home "$DESKTOP_USER")"
+fi
+
+if [ -z "$DESKTOP_HOME" ]; then
+    echo -e "${YELLOW}Warning:${NC} Could not determine the desktop user home from SUDO_USER."
+fi
+
 CONFIG="/boot/config.txt"
 BOOT_OVERLAY_DIR="/boot/overlays"
 if [ -f "/boot/firmware/config.txt" ]; then
@@ -383,6 +512,11 @@ if [ "$choice" -eq "1" ]; then
     echo "dtparam=touchscreen-swapped-x-y=${TOUCH_SWAP}" >> $CONFIG
     echo "dtparam=touchscreen-inverted-x=${TOUCH_INVX}" >> $CONFIG
     echo "dtparam=touchscreen-inverted-y=${TOUCH_INVY}" >> $CONFIG
+
+    if [ -n "$DESKTOP_HOME" ] && [ -d "$DESKTOP_HOME" ]; then
+        install_kms_rotation_autostart "$DESKTOP_USER" "$DESKTOP_HOME" "$ROTATION_DEG"
+        echo "Desktop autostart rotation installed for user ${DESKTOP_USER}."
+    fi
 else
     echo -e "${YELLOW}Installing Legacy Overlay...${NC}"
     dtc -I dts -O dtb -o $OVERLAY_DIR/hypertouch40.dtbo $OVERLAY_DIR/hypertouch40.dts
@@ -408,6 +542,10 @@ dpi_output_format=0x7f216
 dpi_timings=480 0 10 16 59 800 0 15 113 15 0 0 0 60 0 32000000 6
 max_framebuffers=2 
 EOT
+
+    if [ -n "$DESKTOP_HOME" ] && [ -d "$DESKTOP_HOME" ]; then
+        remove_kms_rotation_autostart "$DESKTOP_HOME"
+    fi
 fi
 
 echo ""
