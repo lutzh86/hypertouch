@@ -574,6 +574,9 @@ sed -i '/dpi_group/d' $CONFIG
 sed -i '/dpi_mode/d' $CONFIG
 sed -i '/dpi_output_format/d' $CONFIG
 sed -i '/dpi_timings/d' $CONFIG
+sed -i '/^disable_overscan=/d' $CONFIG
+sed -i '/^framebuffer_depth=/d' $CONFIG
+sed -i '/^framebuffer_ignore_alpha=/d' $CONFIG
 sed -i '/max_framebuffers/d' $CONFIG
 
 # Shared section
@@ -629,6 +632,9 @@ dpi_group=2
 dpi_mode=87
 dpi_output_format=0x7f216
 dpi_timings=480 0 10 16 59 800 0 15 113 15 0 0 0 60 0 32000000 6
+disable_overscan=1
+framebuffer_depth=32
+framebuffer_ignore_alpha=1
 max_framebuffers=2 
 EOT
 
