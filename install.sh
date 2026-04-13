@@ -400,7 +400,11 @@ if [ $? -ne 0 ]; then echo -e "${RED}DKMS Install failed${NC}"; exit 1; fi
 # --- 3. Overlay Selection ---
 echo ""
 echo "Select Display Driver Mode:"
-echo -e "1) ${GREEN}KMS/DRM (Recommended)${NC} - Modern graphics stack, better performance."
+if [[ "${PI_MODEL}" == *"Raspberry Pi 5"* ]]; then
+    echo -e "1) ${GREEN}KMS/DRM via DKMS (Recommended, Pi 5 Beta)${NC} - Modern graphics stack."
+else
+    echo -e "1) ${GREEN}KMS/DRM via DKMS (Recommended)${NC} - Modern graphics stack."
+fi
 echo -e "2) ${YELLOW}Legacy${NC} - Old-school Framebuffer mode."
 echo ""
 read -p "Select [1]: " choice < /dev/tty

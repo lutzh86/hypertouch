@@ -28,7 +28,7 @@ curl https://raw.githubusercontent.com/lutzh86/hypertouch/main/get-hypertouch.sh
     ```bash
     sudo ./install.sh
     ```
-3.  Choose your driver version (KMS is recommended for Pi 4/5/Zero2W).
+3.  Choose your driver version (`KMS/DRM via DKMS` is recommended. On Pi 5 this path is currently beta).
 4.  Reboot.
 
 ## Important Hardware Note (I2C Address)
