@@ -6,6 +6,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+KERNEL_RELEASE="$(uname -r)"
+KERNEL_ARCH="$(uname -m)"
+USERSPACE_ARCH="$(dpkg --print-architecture 2>/dev/null || true)"
+
 if [ "$EUID" -ne 0 ]; then 
   echo -e "${RED}Please run as root${NC}"
   exit 1
@@ -18,19 +22,61 @@ SRC_DIR="/usr/src/hypertouch40-1.0"
 echo -e "${GREEN}HyperTouch 4.0 Installer (2025)${NC}"
 echo "================================"
 
+case "$USERSPACE_ARCH" in
+  armhf)
+    if [ "$KERNEL_ARCH" = "aarch64" ]; then
+      echo -e "${RED}Unsupported mixed Raspberry Pi OS setup detected.${NC}"
+      echo "Userspace is 32-bit (${USERSPACE_ARCH}) but the running kernel is 64-bit (${KERNEL_ARCH})."
+      echo "DKMS cannot build a module reliably for this combination."
+      echo "Use a matching Raspberry Pi OS variant instead:"
+      echo "  - 32-bit OS + 32-bit kernel, or"
+      echo "  - 64-bit OS + 64-bit kernel"
+      echo "If you want to stay on 32-bit Raspberry Pi OS, set 'arm_64bit=0' in config.txt and reboot."
+      exit 1
+    fi
+    ;;
+  arm64)
+    if [ "$KERNEL_ARCH" != "aarch64" ]; then
+      echo -e "${RED}Unsupported mixed Raspberry Pi OS setup detected.${NC}"
+      echo "Userspace is 64-bit (${USERSPACE_ARCH}) but the running kernel is ${KERNEL_ARCH}."
+      echo "Use a matching Raspberry Pi OS image/kernel pair and run the installer again."
+      exit 1
+    fi
+    ;;
+  "")
+    echo -e "${YELLOW}Warning:${NC} Could not determine Debian userspace architecture via dpkg."
+    ;;
+  *)
+    echo -e "${RED}Unsupported architecture: ${USERSPACE_ARCH}${NC}"
+    echo "This installer targets Raspberry Pi OS on armhf and arm64."
+    exit 1
+    ;;
+esac
+
 # --- 1. Dependencies ---
 echo -e "${YELLOW}Installing Dependencies...${NC}"
 apt-get update
 
-# Try to find the correct kernel headers
-HEADERS_PKG="raspberrypi-kernel-headers"
-if ! apt-cache show "$HEADERS_PKG" >/dev/null 2>&1; then
-    echo "raspberrypi-kernel-headers not found, trying linux-headers-$(uname -r)..."
-    HEADERS_PKG="linux-headers-$(uname -r)"
+# Prefer the exact headers for the running kernel, then fall back to the meta package.
+HEADERS_PKG=""
+for pkg in "linux-headers-${KERNEL_RELEASE}" "raspberrypi-kernel-headers"; do
+    if apt-cache show "$pkg" >/dev/null 2>&1; then
+        HEADERS_PKG="$pkg"
+        break
+    fi
+done
+
+if [ -z "$HEADERS_PKG" ]; then
+    echo -e "${RED}Error: Could not find a kernel headers package for ${KERNEL_RELEASE}.${NC}"
+    echo "Tried: linux-headers-${KERNEL_RELEASE}, raspberrypi-kernel-headers"
+    echo "Please update apt sources or install matching headers manually."
+    exit 1
 fi
 
+echo "Using kernel headers package: ${HEADERS_PKG}"
+
 # Install basics first
-apt-get install -y dkms device-tree-compiler i2c-tools git $HEADERS_PKG
+apt-get install -y build-essential dkms device-tree-compiler i2c-tools git "$HEADERS_PKG"
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}Error: Failed to install required packages.$NC"
@@ -69,8 +115,17 @@ read -p "Select [1]: " choice < /dev/tty
 choice=${choice:-1}
 
 CONFIG="/boot/config.txt"
+BOOT_OVERLAY_DIR="/boot/overlays"
 if [ -f "/boot/firmware/config.txt" ]; then
     CONFIG="/boot/firmware/config.txt"
+    BOOT_OVERLAY_DIR="/boot/firmware/overlays"
+elif [ ! -d "$BOOT_OVERLAY_DIR" ] && [ -d "/boot/firmware/overlays" ]; then
+    BOOT_OVERLAY_DIR="/boot/firmware/overlays"
+fi
+
+if [ ! -d "$BOOT_OVERLAY_DIR" ]; then
+    echo -e "${RED}Error: overlays directory not found at ${BOOT_OVERLAY_DIR}.${NC}"
+    exit 1
 fi
 
 if [ -f "$CONFIG" ]; then
@@ -98,10 +153,9 @@ sed -i '/dpi_output_format/d' $CONFIG
 sed -i '/dpi_timings/d' $CONFIG
 sed -i '/max_framebuffers/d' $CONFIG
 
-# Common Fix (Hardware I2C Stability)
+# Shared section
 echo "" >> $CONFIG
 echo "# HyperTouch 4.0" >> $CONFIG
-echo "gpio=27=pu # Fix for Touch Controller Address" >> $CONFIG
 
 if [ "$choice" -eq "1" ]; then
     echo -e "${GREEN}Installing KMS Overlay...${NC}"
@@ -112,7 +166,7 @@ if [ "$choice" -eq "1" ]; then
         exit 1
     fi
     
-    cp $OVERLAY_DIR/hypertouch40-kms.dtbo /boot/overlays/
+    cp $OVERLAY_DIR/hypertouch40-kms.dtbo "$BOOT_OVERLAY_DIR/"
     
     echo "dtoverlay=vc4-kms-v3d" >> $CONFIG
     echo "dtoverlay=hypertouch40-kms" >> $CONFIG
@@ -125,7 +179,7 @@ else
         exit 1
     fi
 
-    cp $OVERLAY_DIR/hypertouch40.dtbo /boot/overlays/
+    cp $OVERLAY_DIR/hypertouch40.dtbo "$BOOT_OVERLAY_DIR/"
     
     cat <<EOT >> $CONFIG
 dtoverlay=hypertouch40
@@ -142,4 +196,5 @@ fi
 
 echo ""
 echo -e "${GREEN}Installation Complete.${NC}"
+echo "Touch address autodetect is enabled for both 0x14 and 0x5d."
 echo "Please reboot your Raspberry Pi."

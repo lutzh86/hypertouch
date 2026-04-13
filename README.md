@@ -36,7 +36,21 @@ curl https://raw.githubusercontent.com/lutzh86/hypertouch/main/get-hypertouch.sh
 The Touch Controller on this display chooses its I2C address (`0x14` or `0x5d`) based on the state of the Interrupt Pin (GPIO 27) at power-on.
 Since the Reset Pin is **hardwired to 3.3V**, software cannot reset the chip to fix a wrong address.
 
-The installer applies a fix in `/boot/config.txt` (`gpio=27=pu`) to force the pin HIGH during boot, ensuring address `0x14` is selected.
+The overlays in this repository register both Goodix addresses, so the touchscreen works whether the panel powers up on `0x14` or `0x5d`.
+
+## Supported Raspberry Pi OS Variants
+
+The installer supports both native Raspberry Pi OS variants:
+
+*   **32-bit Raspberry Pi OS** (`armhf` userspace with a 32-bit kernel)
+*   **64-bit Raspberry Pi OS** (`arm64` userspace with a 64-bit kernel)
+
+Mixed installations are **not supported**:
+
+*   32-bit userspace with a 64-bit kernel
+*   64-bit userspace with a 32-bit kernel
+
+The installer detects these mismatches and stops with an explicit error before DKMS runs.
 
 ## Directory Structure
 
@@ -57,6 +71,43 @@ echo 31 | sudo tee /sys/class/backlight/soc:backlight/brightness
 
 ## Troubleshooting
 
-If the touch does not work:
-1.  Check the I2C address: `i2cdetect -y 11`
-2.  It should be `14`. If it is `5d`, the pull-up fix might not be active or the cable is loose.
+### Dependency Errors / Kernel/Header Mismatch
+If you encounter errors during installation regarding kernel headers, `gcc`, or "unmet dependencies", verify that your Raspberry Pi OS userspace and running kernel match.
+
+DKMS builds against the running kernel, so mixed 32/64-bit installations will fail.
+
+**Solution:**
+Use a matching Raspberry Pi OS image/kernel pair.
+
+If you are intentionally using **32-bit Raspberry Pi OS**, switch to the 32-bit kernel:
+1. Edit `/boot/config.txt`:
+   ```bash
+   sudo nano /boot/config.txt
+   ```
+2. Add the following line to the end of the file:
+   ```ini
+   arm_64bit=0
+   ```
+3. Reboot your Pi:
+   ```bash
+   sudo reboot
+   ```
+4. Run the installer again.
+
+### "Pin already requested" Errors
+The installer automatically disables conflicting interfaces in `/boot/config.txt`.
+- `dtparam=i2c_arm=on` is disabled (conflicts with DPI Pins 2 & 3).
+- `enable_uart=1` is disabled (conflicts with DPI Pins 14 & 15).
+
+If you manually re-enable these, the display or touch might fail.
+
+### Touch Not Detected
+Check the software I2C bus with:
+
+```bash
+i2cdetect -y 11
+```
+
+Either `0x14` or `0x5d` is valid for this panel revision.
+
+## License

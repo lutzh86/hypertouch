@@ -88,6 +88,7 @@
         __overlay__ {
             status = "okay";
             
+            /* Support both hardware-selected Goodix addresses. */
             gt911: gt911@14 {
                 compatible = "goodix,gt911";
                 reg = <0x14>;
@@ -151,8 +152,11 @@
     };
 
     __overrides__ {
-        touchscreen-inverted-x = <&gt911>,"touchscreen-inverted-x";
-        touchscreen-inverted-y = <&gt911>,"touchscreen-inverted-y";
-        touchscreen-swapped-x-y = <&gt911>,"touchscreen-swapped-x-y";
+        touchscreen-inverted-x = <&gt911>,"touchscreen-inverted-x",
+                                 <&gt911_5d>,"touchscreen-inverted-x";
+        touchscreen-inverted-y = <&gt911>,"touchscreen-inverted-y",
+                                 <&gt911_5d>,"touchscreen-inverted-y";
+        touchscreen-swapped-x-y = <&gt911>,"touchscreen-swapped-x-y",
+                                  <&gt911_5d>,"touchscreen-swapped-x-y";
     };
 };
