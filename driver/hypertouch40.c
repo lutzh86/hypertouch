@@ -242,7 +242,7 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     
     // Init sequence for ILI9806E
     uint16_t data_lcd[] = {
-        0x0FF, 0x1FF, 0x198, 0x106, 0x104, 0x101, 0x008, 0x110, 0x021, 0x10D,
+        0x0FF, 0x1FF, 0x198, 0x106, 0x104, 0x101, 0x008, 0x110, 0x021, 0x10F,
         0x030, 0x102, 0x031, 0x100, 0x040, 0x110, 0x041, 0x155, 0x042, 0x102,
         0x043, 0x184, 0x044, 0x184, 0x050, 0x178, 0x051, 0x178, 0x052, 0x100,
         0x053, 0x177, 0x057, 0x160, 0x060, 0x107, 0x061, 0x100, 0x062, 0x108,
@@ -327,7 +327,7 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
 
         for (x = 0; x < sizeof(data_lcd) / sizeof(uint16_t); x++) {
             if (data_lcd[x] == 0xffff) {
-                mdelay(100);
+                mdelay(200);
             } else {
                 // SPI Write Logic
                 uint16_t d = data_lcd[x];
@@ -350,6 +350,9 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
                 udelay(T_START_NS);
             }
         }
+
+        /* Match Pimoroni's post-display-on settle time. */
+        mdelay(200);
         
         dev_info(dev, "LCD Init done. Releasing GPIOs.\n");
         
