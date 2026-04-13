@@ -19,8 +19,20 @@ DRIVER_DIR="driver"
 OVERLAY_DIR="overlays"
 SRC_DIR="/usr/src/hypertouch40-1.0"
 ROTATION_HELPER="/usr/local/bin/hypertouch-apply-desktop-rotation"
+WAYFIRE_MARKER_BEGIN="# BEGIN HYPERTOUCH WAYFIRE"
+WAYFIRE_MARKER_END="# END HYPERTOUCH WAYFIRE"
 
 rotation_wayland_transform() {
+    case "$1" in
+        0) echo "normal" ;;
+        90) echo "90" ;;
+        180) echo "180" ;;
+        270) echo "270" ;;
+        *) return 1 ;;
+    esac
+}
+
+wayfire_transform() {
     case "$1" in
         0) echo "normal" ;;
         90) echo "90" ;;
@@ -38,6 +50,20 @@ rotation_x11_transform() {
         270) echo "left" ;;
         *) return 1 ;;
     esac
+}
+
+detect_goodix_input_name() {
+    local name_file
+
+    for name_file in /sys/class/input/input*/name; do
+        [ -r "$name_file" ] || continue
+        if grep -q "Goodix Capacitive TouchScreen" "$name_file"; then
+            cat "$name_file"
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 desktop_user_home() {
@@ -136,6 +162,66 @@ remove_kms_rotation_autostart() {
 
     rm -f "$ROTATION_HELPER"
     rm -f "${user_home}/.config/autostart/hypertouch-rotation.desktop"
+}
+
+install_wayfire_rotation_config() {
+    local user_name="$1"
+    local user_home="$2"
+    local rotation_deg="$3"
+    local input_name="$4"
+    local transform cfg_dir cfg_file tmp_file
+
+    transform="$(wayfire_transform "$rotation_deg")" || return 1
+    cfg_dir="${user_home}/.config"
+    cfg_file="${cfg_dir}/wayfire.ini"
+    tmp_file="$(mktemp)"
+
+    mkdir -p "$cfg_dir"
+
+    if [ -f "$cfg_file" ]; then
+        awk -v begin="$WAYFIRE_MARKER_BEGIN" -v end="$WAYFIRE_MARKER_END" '
+            $0 == begin {skip=1; next}
+            $0 == end {skip=0; next}
+            !skip {print}
+        ' "$cfg_file" > "$tmp_file"
+    fi
+
+    cat >> "$tmp_file" <<EOF
+$WAYFIRE_MARKER_BEGIN
+[output:DPI-1]
+transform = ${transform}
+
+[output:DSI-1]
+transform = ${transform}
+
+[input-device:${input_name}]
+output = DPI-1
+$WAYFIRE_MARKER_END
+EOF
+
+    install -m 0644 "$tmp_file" "$cfg_file"
+    chown "$user_name:$user_name" "$cfg_file"
+    rm -f "$tmp_file"
+}
+
+remove_wayfire_rotation_config() {
+    local user_name="$1"
+    local user_home="$2"
+    local cfg_file tmp_file
+
+    cfg_file="${user_home}/.config/wayfire.ini"
+    [ -f "$cfg_file" ] || return 0
+
+    tmp_file="$(mktemp)"
+    awk -v begin="$WAYFIRE_MARKER_BEGIN" -v end="$WAYFIRE_MARKER_END" '
+        $0 == begin {skip=1; next}
+        $0 == end {skip=0; next}
+        !skip {print}
+    ' "$cfg_file" > "$tmp_file"
+
+    install -m 0644 "$tmp_file" "$cfg_file"
+    chown "$user_name:$user_name" "$cfg_file"
+    rm -f "$tmp_file"
 }
 
 detect_touch_address() {
@@ -429,12 +515,18 @@ esac
 
 DESKTOP_USER="${SUDO_USER:-}"
 DESKTOP_HOME=""
+GOODIX_INPUT_NAME=""
 if [ -n "$DESKTOP_USER" ]; then
     DESKTOP_HOME="$(desktop_user_home "$DESKTOP_USER")"
 fi
 
 if [ -z "$DESKTOP_HOME" ]; then
     echo -e "${YELLOW}Warning:${NC} Could not determine the desktop user home from SUDO_USER."
+fi
+
+GOODIX_INPUT_NAME="$(detect_goodix_input_name || true)"
+if [ -z "$GOODIX_INPUT_NAME" ]; then
+    echo -e "${YELLOW}Warning:${NC} Could not detect the Goodix input device name for Wayfire mapping."
 fi
 
 CONFIG="/boot/config.txt"
@@ -505,11 +597,12 @@ if [ "$choice" -eq "1" ]; then
     echo "dtoverlay=vc4-kms-v3d" >> $CONFIG
     echo "dtoverlay=hypertouch40-kms" >> $CONFIG
     echo "dtparam=addr=${TOUCH_ADDR}" >> $CONFIG
-    echo "dtparam=touchscreen-swapped-x-y=${TOUCH_SWAP}" >> $CONFIG
-    echo "dtparam=touchscreen-inverted-x=${TOUCH_INVX}" >> $CONFIG
-    echo "dtparam=touchscreen-inverted-y=${TOUCH_INVY}" >> $CONFIG
 
     if [ -n "$DESKTOP_HOME" ] && [ -d "$DESKTOP_HOME" ]; then
+        if [ -n "$GOODIX_INPUT_NAME" ]; then
+            install_wayfire_rotation_config "$DESKTOP_USER" "$DESKTOP_HOME" "$ROTATION_DEG" "$GOODIX_INPUT_NAME"
+            echo "Wayfire rotation config installed for input device: ${GOODIX_INPUT_NAME}"
+        fi
         install_kms_rotation_autostart "$DESKTOP_USER" "$DESKTOP_HOME" "$ROTATION_DEG"
         echo "Desktop autostart rotation installed for user ${DESKTOP_USER}."
     fi
@@ -540,6 +633,9 @@ max_framebuffers=2
 EOT
 
     if [ -n "$DESKTOP_HOME" ] && [ -d "$DESKTOP_HOME" ]; then
+        if [ -n "$DESKTOP_USER" ]; then
+            remove_wayfire_rotation_config "$DESKTOP_USER" "$DESKTOP_HOME"
+        fi
         remove_kms_rotation_autostart "$DESKTOP_HOME"
     fi
 fi

@@ -100,7 +100,7 @@ The installer now offers four built-in rotation presets:
 *   `180°` - Portrait, header on the left
 *   `270°` - Landscape, header on the top
 
-For **KMS**, the installer writes matching touchscreen axis settings and installs a desktop autostart helper so Raspberry Pi OS rotates the `DPI-1`/`DSI-1` desktop output after login under Wayland (`wlr-randr`) or X11 (`xrandr`).
+For **KMS**, the installer keeps the touchscreen at its base orientation, writes a Wayfire output/input mapping for `DPI-1`, and installs a desktop autostart helper as a fallback for sessions that need `wlr-randr` or `xrandr`.
 
 For **Legacy**, the installer writes `display_lcd_rotate=` plus matching touchscreen axis settings.
 
