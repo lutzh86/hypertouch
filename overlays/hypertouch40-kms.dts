@@ -34,6 +34,7 @@
                 compatible = "panel-dpi";
                 /* We use the custom backlight driver node defined below */
                 backlight = <&backlight>;
+                rotation = <0>;
                 
                 width-mm = <52>;
                 height-mm = <86>;
@@ -88,7 +89,6 @@
         __overlay__ {
             status = "okay";
             
-            /* Support both hardware-selected Goodix addresses. */
             gt911: gt911@14 {
                 compatible = "goodix,gt911";
                 reg = <0x14>;
@@ -100,19 +100,6 @@
                  * Address selection (0x14 vs 0x5D) depends solely on the 
                  * state of INT (GPIO 27) at power-on.
                  */
-                touchscreen-size-x = <480>;
-                touchscreen-size-y = <800>;
-                touchscreen-x-mm = <51>;
-                touchscreen-y-mm = <85>;
-                touchscreen-inverted-y;
-                touchscreen-swapped-x-y;
-            };
-
-            gt911_5d: gt911@5d {
-                compatible = "goodix,gt911";
-                reg = <0x5d>;
-                interrupt-parent = <&gpio>;
-                interrupts = <27 2>; /* IRQ_TYPE_EDGE_FALLING */
                 touchscreen-size-x = <480>;
                 touchscreen-size-y = <800>;
                 touchscreen-x-mm = <51>;
@@ -152,11 +139,11 @@
     };
 
     __overrides__ {
-        touchscreen-inverted-x = <&gt911>,"touchscreen-inverted-x",
-                                 <&gt911_5d>,"touchscreen-inverted-x";
-        touchscreen-inverted-y = <&gt911>,"touchscreen-inverted-y",
-                                 <&gt911_5d>,"touchscreen-inverted-y";
-        touchscreen-swapped-x-y = <&gt911>,"touchscreen-swapped-x-y",
-                                  <&gt911_5d>,"touchscreen-swapped-x-y";
+        addr = <&gt911>,"reg:0";
+        rotate = <&panel>,"rotation:0";
+        rotation = <&panel>,"rotation:0";
+        touchscreen-inverted-x = <&gt911>,"touchscreen-inverted-x?";
+        touchscreen-inverted-y = <&gt911>,"touchscreen-inverted-y?";
+        touchscreen-swapped-x-y = <&gt911>,"touchscreen-swapped-x-y?";
     };
 };

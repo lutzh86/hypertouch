@@ -36,7 +36,12 @@ curl https://raw.githubusercontent.com/lutzh86/hypertouch/main/get-hypertouch.sh
 The Touch Controller on this display chooses its I2C address (`0x14` or `0x5d`) based on the state of the Interrupt Pin (GPIO 27) at power-on.
 Since the Reset Pin is **hardwired to 3.3V**, software cannot reset the chip to fix a wrong address.
 
-The overlays in this repository register both Goodix addresses, so the touchscreen works whether the panel powers up on `0x14` or `0x5d`.
+The installer configures **exactly one** Goodix touchscreen node and also sets a boot-time pull on GPIO 27 to force the selected address:
+
+*   `0x14` via `gpio=27=pu`
+*   `0x5d` via `gpio=27=pd`
+
+This avoids duplicate probing, I2C errors on the non-existent address, and IRQ conflicts during boot.
 
 ## Supported Raspberry Pi OS Variants
 
@@ -51,6 +56,23 @@ Mixed installations are **not supported**:
 *   64-bit userspace with a 32-bit kernel
 
 The installer detects these mismatches and stops with an explicit error before DKMS runs.
+
+## Touch Address Selection
+
+During installation, the script auto-detects the touch address in this order:
+
+*   existing bound Goodix device in `sysfs`
+*   active `i2c-gpio` bus scan
+*   Raspberry Pi model fallback
+
+The board-model fallback is:
+
+*   Pi 4 / Pi 400 / CM4: defaults to `0x14`
+*   Pi 3 / Zero 2 W / CM3: defaults to `0x5d`
+
+You can still override the result and force either `0x14` or `0x5d` manually.
+
+This keeps the installer independent from hardcoded bus numbers such as `11` or `22`.
 
 ## Directory Structure
 
@@ -68,6 +90,19 @@ To set the brightness (e.g., to maximum):
 echo 31 | sudo tee /sys/class/backlight/soc:backlight/brightness
 ```
 *Note: If the path `soc:backlight` does not exist, check `ls /sys/class/backlight/` for the correct device name.*
+
+## Rotation
+
+The installer now offers four built-in rotation presets:
+
+*   `0°` - Portrait, header on the right
+*   `90°` - Landscape, header on the bottom
+*   `180°` - Portrait, header on the left
+*   `270°` - Landscape, header on the top
+
+For **KMS**, the installer writes a `rotate=` overlay parameter and matching touchscreen axis settings.
+
+For **Legacy**, the installer writes `display_lcd_rotate=` plus matching touchscreen axis settings.
 
 ## Troubleshooting
 
@@ -102,12 +137,18 @@ The installer automatically disables conflicting interfaces in `/boot/config.txt
 If you manually re-enable these, the display or touch might fail.
 
 ### Touch Not Detected
-Check the software I2C bus with:
+The software I2C bus number can vary between systems. First list the available buses:
 
 ```bash
-i2cdetect -y 11
+i2cdetect -l
 ```
 
-Either `0x14` or `0x5d` is valid for this panel revision.
+Then scan the `i2c-gpio` bus shown in that list:
+
+```bash
+i2cdetect -y <bus-number>
+```
+
+The detected address must match the `dtparam=addr=` value written by the installer.
 
 ## License

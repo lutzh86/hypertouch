@@ -19,6 +19,93 @@ DRIVER_DIR="driver"
 OVERLAY_DIR="overlays"
 SRC_DIR="/usr/src/hypertouch40-1.0"
 
+detect_touch_address() {
+    local model="$1"
+
+    case "$model" in
+        *"Raspberry Pi Zero 2 W"*|*"Raspberry Pi 3"*|*"Compute Module 3"*)
+            echo "0x5d"
+            return 0
+            ;;
+        *"Raspberry Pi 4"*|*"Pi 400"*|*"Compute Module 4"*)
+            echo "0x14"
+            return 0
+            ;;
+        *)
+            echo "0x14"
+            return 1
+            ;;
+    esac
+}
+
+detect_touch_address_from_binding() {
+    local driver_dir driver_name devpath suffix
+
+    for driver_dir in /sys/bus/i2c/drivers/*; do
+        [ -d "$driver_dir" ] || continue
+        driver_name="$(basename "$driver_dir" | tr '[:upper:]' '[:lower:]')"
+
+        case "$driver_name" in
+            *goodix*)
+                for devpath in "$driver_dir"/*-0014 "$driver_dir"/*-005d; do
+                    [ -e "$devpath" ] || continue
+                    suffix="${devpath##*-}"
+                    case "$suffix" in
+                        0014) echo "0x14"; return 0 ;;
+                        005d) echo "0x5d"; return 0 ;;
+                    esac
+                done
+                ;;
+        esac
+    done
+
+    return 1
+}
+
+detect_touch_address_from_i2c_gpio() {
+    local name_file bus bus_name scan
+
+    command -v i2cdetect >/dev/null 2>&1 || return 1
+
+    for name_file in /sys/class/i2c-dev/i2c-*/name; do
+        [ -r "$name_file" ] || continue
+        bus="${name_file%/name}"
+        bus="${bus##*/i2c-}"
+        bus_name="$(cat "$name_file")"
+
+        case "$bus_name" in
+            *i2c-gpio*)
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        scan="$(i2cdetect -y "$bus" 2>/dev/null || true)"
+        [ -n "$scan" ] || continue
+
+        if printf '%s\n' "$scan" | awk '/^10:/{exit !(($6 == "14") || ($6 == "UU"))} END{if (NR == 0) exit 1}'; then
+            echo "0x14"
+            return 0
+        fi
+
+        if printf '%s\n' "$scan" | awk '/^50:/{exit !(($15 == "5d") || ($15 == "UU"))} END{if (NR == 0) exit 1}'; then
+            echo "0x5d"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+touch_gpio_config_for_addr() {
+    case "$1" in
+        0x14) echo "gpio=27=pu" ;;
+        0x5d) echo "gpio=27=pd" ;;
+        *) return 1 ;;
+    esac
+}
+
 echo -e "${GREEN}HyperTouch 4.0 Installer (2025)${NC}"
 echo "================================"
 
@@ -114,6 +201,117 @@ echo ""
 read -p "Select [1]: " choice < /dev/tty
 choice=${choice:-1}
 
+echo ""
+PI_MODEL="Unknown Raspberry Pi"
+if [ -r "/proc/device-tree/model" ]; then
+    PI_MODEL="$(tr -d '\0' < /proc/device-tree/model)"
+fi
+
+DETECTED_TOUCH_SOURCE=""
+if DETECTED_TOUCH_ADDR="$(detect_touch_address_from_binding)"; then
+    DETECTED_TOUCH_SOURCE="current Goodix binding"
+    DETECTED_TOUCH_STATUS=0
+elif DETECTED_TOUCH_ADDR="$(detect_touch_address_from_i2c_gpio)"; then
+    DETECTED_TOUCH_SOURCE="active i2c-gpio scan"
+    DETECTED_TOUCH_STATUS=0
+else
+    DETECTED_TOUCH_ADDR="$(detect_touch_address "$PI_MODEL")"
+    DETECTED_TOUCH_STATUS=$?
+    if [ "$DETECTED_TOUCH_STATUS" -eq 0 ]; then
+        DETECTED_TOUCH_SOURCE="board profile"
+    else
+        DETECTED_TOUCH_SOURCE="default fallback"
+    fi
+fi
+
+if [ "$DETECTED_TOUCH_STATUS" -eq 0 ]; then
+    echo "Detected board: ${PI_MODEL}"
+    echo "Auto-detected touch address: ${DETECTED_TOUCH_ADDR} (${DETECTED_TOUCH_SOURCE})"
+else
+    echo "Detected board: ${PI_MODEL}"
+    echo -e "${YELLOW}Warning:${NC} No live touch address could be detected. Defaulting to ${DETECTED_TOUCH_ADDR} (${DETECTED_TOUCH_SOURCE})."
+fi
+
+echo ""
+echo "Select Touch Address Mode:"
+echo "1) Auto (${DETECTED_TOUCH_ADDR})"
+echo "2) Force 0x14"
+echo "3) Force 0x5d"
+echo ""
+read -p "Select [1]: " touch_choice < /dev/tty
+touch_choice=${touch_choice:-1}
+
+case "$touch_choice" in
+    1)
+        TOUCH_ADDR="${DETECTED_TOUCH_ADDR}"
+        ;;
+    2)
+        TOUCH_ADDR="0x14"
+        ;;
+    3)
+        TOUCH_ADDR="0x5d"
+        ;;
+    *)
+        echo -e "${RED}Invalid touch address mode selection.${NC}"
+        exit 1
+        ;;
+esac
+
+TOUCH_GPIO_CFG="$(touch_gpio_config_for_addr "${TOUCH_ADDR}")"
+if [ -z "$TOUCH_GPIO_CFG" ]; then
+    echo -e "${RED}Failed to derive GPIO boot configuration for touch address ${TOUCH_ADDR}.${NC}"
+    exit 1
+fi
+
+echo ""
+echo "Select Screen Rotation:"
+echo "1) 0°   - Portrait, header on the right (default)"
+echo "2) 90°  - Landscape, header on the bottom"
+echo "3) 180° - Portrait, header on the left"
+echo "4) 270° - Landscape, header on the top"
+echo ""
+read -p "Select [1]: " rotation_choice < /dev/tty
+rotation_choice=${rotation_choice:-1}
+
+case "$rotation_choice" in
+    1)
+        ROTATION_DEG=0
+        KMS_ROTATION=0
+        TOUCH_SWAP="on"
+        TOUCH_INVX="off"
+        TOUCH_INVY="on"
+        LEGACY_ROTATE=0
+        ;;
+    2)
+        ROTATION_DEG=90
+        KMS_ROTATION=270
+        TOUCH_SWAP="off"
+        TOUCH_INVX="on"
+        TOUCH_INVY="on"
+        LEGACY_ROTATE=1
+        ;;
+    3)
+        ROTATION_DEG=180
+        KMS_ROTATION=180
+        TOUCH_SWAP="on"
+        TOUCH_INVX="on"
+        TOUCH_INVY="off"
+        LEGACY_ROTATE=2
+        ;;
+    4)
+        ROTATION_DEG=270
+        KMS_ROTATION=90
+        TOUCH_SWAP="off"
+        TOUCH_INVX="off"
+        TOUCH_INVY="off"
+        LEGACY_ROTATE=3
+        ;;
+    *)
+        echo -e "${RED}Invalid rotation selection.${NC}"
+        exit 1
+        ;;
+esac
+
 CONFIG="/boot/config.txt"
 BOOT_OVERLAY_DIR="/boot/overlays"
 if [ -f "/boot/firmware/config.txt" ]; then
@@ -145,6 +343,13 @@ sed -i '/^enable_uart=1/s/^/#/' $CONFIG
 sed -i '/dtoverlay=hypertouch40/d' $CONFIG
 sed -i '/dtoverlay=vc4-kms-v3d/d' $CONFIG
 sed -i '/gpio=27=pu/d' $CONFIG
+sed -i '/gpio=27=pd/d' $CONFIG
+sed -i '/^display_lcd_rotate=/d' $CONFIG
+sed -i '/^dtparam=addr=/d' $CONFIG
+sed -i '/^dtparam=rotate=/d' $CONFIG
+sed -i '/^dtparam=touchscreen-swapped-x-y=/d' $CONFIG
+sed -i '/^dtparam=touchscreen-inverted-x=/d' $CONFIG
+sed -i '/^dtparam=touchscreen-inverted-y=/d' $CONFIG
 # Legacy cleanup
 sed -i '/enable_dpi_lcd/d' $CONFIG
 sed -i '/dpi_group/d' $CONFIG
@@ -156,6 +361,9 @@ sed -i '/max_framebuffers/d' $CONFIG
 # Shared section
 echo "" >> $CONFIG
 echo "# HyperTouch 4.0" >> $CONFIG
+echo "${TOUCH_GPIO_CFG}" >> $CONFIG
+echo "# Touch address: ${TOUCH_ADDR}" >> $CONFIG
+echo "# Rotation: ${ROTATION_DEG} degrees clockwise" >> $CONFIG
 
 if [ "$choice" -eq "1" ]; then
     echo -e "${GREEN}Installing KMS Overlay...${NC}"
@@ -170,6 +378,11 @@ if [ "$choice" -eq "1" ]; then
     
     echo "dtoverlay=vc4-kms-v3d" >> $CONFIG
     echo "dtoverlay=hypertouch40-kms" >> $CONFIG
+    echo "dtparam=addr=${TOUCH_ADDR}" >> $CONFIG
+    echo "dtparam=rotate=${KMS_ROTATION}" >> $CONFIG
+    echo "dtparam=touchscreen-swapped-x-y=${TOUCH_SWAP}" >> $CONFIG
+    echo "dtparam=touchscreen-inverted-x=${TOUCH_INVX}" >> $CONFIG
+    echo "dtparam=touchscreen-inverted-y=${TOUCH_INVY}" >> $CONFIG
 else
     echo -e "${YELLOW}Installing Legacy Overlay...${NC}"
     dtc -I dts -O dtb -o $OVERLAY_DIR/hypertouch40.dtbo $OVERLAY_DIR/hypertouch40.dts
@@ -183,18 +396,22 @@ else
     
     cat <<EOT >> $CONFIG
 dtoverlay=hypertouch40
+dtparam=addr=${TOUCH_ADDR}
+display_lcd_rotate=${LEGACY_ROTATE}
+dtparam=touchscreen-swapped-x-y=${TOUCH_SWAP}
+dtparam=touchscreen-inverted-x=${TOUCH_INVX}
+dtparam=touchscreen-inverted-y=${TOUCH_INVY}
 enable_dpi_lcd=1
 dpi_group=2
 dpi_mode=87
 dpi_output_format=0x7f216
 dpi_timings=480 0 10 16 59 800 0 15 113 15 0 0 0 60 0 32000000 6
 max_framebuffers=2 
-# dtparam=touchscreen-swapped-x-y
-# dtparam=touchscreen-inverted-x
 EOT
 fi
 
 echo ""
 echo -e "${GREEN}Installation Complete.${NC}"
-echo "Touch address autodetect is enabled for both 0x14 and 0x5d."
+echo "Touch address is fixed to ${TOUCH_ADDR}."
+echo "Display rotation is set to ${ROTATION_DEG} degrees clockwise."
 echo "Please reboot your Raspberry Pi."
