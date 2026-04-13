@@ -239,7 +239,6 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
     struct backlight_device *bl;
     int ret, x;
     u32 value;
-    u32 lcd_reg_21 = 0x0f;
     
     // Init sequence for ILI9806E
     uint16_t data_lcd[] = {
@@ -282,11 +281,6 @@ static int al3050_backlight_probe(struct platform_device *pdev) {
 
     ret = of_property_read_u32(node, "rfa_en", &value);
     pchip->rfa_en = (ret < 0) ? 0 : value;
-
-    ret = of_property_read_u32(node, "lcd-init-reg-21", &lcd_reg_21);
-    if (ret < 0)
-        lcd_reg_21 = 0x0f;
-    data_lcd[9] = 0x100 | (lcd_reg_21 & 0xff);
 
     memset(&props, 0, sizeof(props));
     props.brightness = BRIGHTNESS_MAX;
