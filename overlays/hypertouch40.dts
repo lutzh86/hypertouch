@@ -5,28 +5,6 @@
     compatible = "brcm,bcm2835";
 
     fragment@0 {
-        target = <&i2c1>;
-        __overlay__ {
-            status = "disabled";
-        };
-    };
-
-    fragment@1 {
-        target = <&i2c0>;
-        __overlay__ {
-            status = "disabled";
-        };
-    };
-
-    fragment@2 {
-        target = <&fb>;
-        __overlay__ {
-            pinctrl-names = "default";
-            pinctrl-0 = <&dpi18_pins>;
-        };
-    };
-
-    fragment@3 {
         target = <&gpio>;
         __overlay__ {
             dpi18_pins: dpi18_pins {
@@ -37,27 +15,29 @@
         };
     };
 
-    fragment@4 {
-                target-path = "/soc";
-                __overlay__ {
-                        backlight: backlight {
-                                compatible = "hypertouch40_bl";
-                                bl-gpios = <&gpio 19 0>;
-                                fb = <0xdeadbeef>;
-
-                        };
-                };
-        };
-
-    fragment@5 {
+    fragment@1 {
         target-path = "/";
         __overlay__ {
-                        i2c_gpio: i2c@0 {
-                            compatible = "i2c-gpio";
-                            gpios = <&gpio 10 0 /* sda */
-                                 &gpio 11 0 /* scl */
-                                >;
-                            i2c-gpio,delay-us = <4>;        /* ~100 kHz */                #address-cells = <1>;
+            backlight: backlight {
+                compatible = "hypertouch40_bl";
+                bl-gpios = <&gpio 19 0>;
+                lcd-init-reg-21 = <0x0d>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&dpi18_pins>;
+            };
+        };
+    };
+
+    fragment@2 {
+        target-path = "/";
+        __overlay__ {
+            i2c_gpio: i2c@0 {
+                compatible = "i2c-gpio";
+                gpios = <&gpio 10 0 /* sda */
+                         &gpio 11 0 /* scl */
+                        >;
+                i2c-gpio,delay-us = <4>; /* ~100 kHz */
+                #address-cells = <1>;
                 #size-cells = <0>;
                 status = "okay";
             };
@@ -65,9 +45,12 @@
     };
 
     /* Then add the Touch Device to the bus */
-    fragment@6 {
+    fragment@3 {
         target = <&i2c_gpio>;
         __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
             gt911: gt911@14 {
                 compatible = "goodix,gt911";
                 reg = <0x14>;
